@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Background Removal Tool</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>Background Removal Tool</h1>
+    <div class="button-group">
+        <button id="backBtn">← Back to Upload</button>
+    </div>
+    
+    <div id="imageContainer">
+        <div class="image-section">
+            <h3>Original Image</h3>
+            <div id="originalPreview">
+                <div class="loading">Loading image...</div>
+            </div>
+        </div>
+        
+        <div class="image-section">
+            <h3>Background Removed</h3>
+            <div id="processedPreview">
+                <div class="placeholder">Click "Remove Background" to process</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="image-info">
+        <div>Original Size: <span id="originalSize">Loading...</span></div>
+        <div>Status: <span id="processingStatus">Ready to process</span></div>
+    </div>
+    
+    <div class="button-group">
+        <button id="removeBackgroundBtn">🎨 Remove Background</button>
+    </div>
+    
+    <div class="button-group">
+        <button id="downloadBtn" disabled>💾 Download Result</button>
+    </div>
+
+    <script>
+        let imageFilename = null;
+        let processedFilename = null;
+        let originalImageUrl = null;
+        let originalImageDimensions = { width: 0, height: 0 };
+
+        // Get image filename from URL parameter
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            imageFilename = urlParams.get('filename');
+            
+            if (imageFilename) {
+                originalImageUrl = '/image/' + imageFilename;
+                displayOriginalImage();
+            } else {
+                document.getElementById('originalPreview').innerHTML = 
+                    '<div class="error-message">No image data found. Please go back to upload page and select an image.</div>';
+            }
+        });
+
+        function displayOriginalImage() {
+            if (imageFilename) {
+                const img = new Image();
+                img.onload = function() {
+                    originalImageDimensions.width = this.naturalWidth;
+                    originalImageDimensions.height = this.naturalHeight;
+                    document.getElementById('originalSize').textContent = 
+                        this.naturalWidth + '×' + this.naturalHeight + ' pixels';
+                };
+                img.src = originalImageUrl;
+                
+                document.getElementById('originalPreview').innerHTML = 
+                    '<img id="originalImage" src="' + originalImageUrl + '" alt="Original image">';
+            }
+        }
+
+        document.getElementById('backBtn').addEventListener('click', function() {
+            window.location.href = '/backgroundupload';
+        });
+
+        document.getElementById('removeBackgroundBtn').addEventListener('click', function() {
+            if (!imageFilename) {
+                alert('No image to process. Please go back and upload an image.');
+                return;
+            }
+            
+            // Show processing state
+            this.disabled = true;
+            this.textContent = 'Processing...';
+            document.getElementById('processingStatus').textContent = 'Removing background...';
+            document.getElementById('processingStatus').className = 'processing';
+            
+            // Show loading in processed preview
+            document.getElementById('processedPreview').innerHTML = 
+                '<div class="loading">Processing image, please wait...</div>';
+
+            fetch('/remove_background', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filename: imageFilename
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    processedFilename = data.processed_filename;
+                    
+                    // Display processed image
+                    document.getElementById('processedPreview').innerHTML = 
+                        '<img id="processedImage" src="' + data.processed_url + '" alt="Background removed">';
+                    
+                    document.getElementById('processingStatus').textContent = 'Background removed successfully';
+                    document.getElementById('processingStatus').className = 'success';
+                    document.getElementById('downloadBtn').disabled = false;
+                } else {
+                    document.getElementById('processedPreview').innerHTML = 
+                        '<div class="error-message">Processing failed: ' + data.error + '</div>';
+                    document.getElementById('processingStatus').textContent = 'Processing failed';
+                    document.getElementById('processingStatus').className = 'error';
+                }
+            })
+            .catch(error => {
+                document.getElementById('processedPreview').innerHTML = 
+                    '<div class="error-message">Processing failed: ' + error.message + '</div>';
+                document.getElementById('processingStatus').textContent = 'Processing failed';
+                document.getElementById('processingStatus').className = 'error';
+            })
+            .finally(() => {
+                this.disabled = false;
+                this.textContent = '🎨 Remove Background';
+            });
+        });
+
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            if (processedFilename) {
+                // Download the processed image
+                window.open('/download_background_removed/' + processedFilename, '_blank');
+            } else {
+                alert('No processed image to download. Please remove background first.');
+            }
+        });
+    </script>
+</body>
+</html>

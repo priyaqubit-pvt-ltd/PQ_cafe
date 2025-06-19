@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Thumbnail Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #thumbnailPreview {
+            text-align: center;
+            margin: 20px 0;
+        }
+        #thumbnailPreview img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        #backBtn {
+            background-color: #6c757d;
+            color: white;
+        }
+        #backBtn:hover {
+            background-color: #545b62;
+        }
+        .size-btn {
+            background-color: #007bff;
+            color: white;
+        }
+        .size-btn:hover {
+            background-color: #0056b3;
+        }
+        .size-btn.active {
+            background-color: #28a745;
+        }
+        #customSizeInputs {
+            display: none;
+            margin: 10px 0;
+            text-align: center;
+        }
+        #customSizeInputs input {
+            width: 80px;
+            padding: 8px;
+            margin: 0 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #generateBtn {
+            background-color: #ffc107;
+            color: black;
+        }
+        #generateBtn:hover {
+            background-color: #e0a800;
+        }
+        #downloadBtn {
+            background-color: #28a745;
+            color: white;
+        }
+        #downloadBtn:hover {
+            background-color: #1e7e34;
+        }
+        .button-group {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .size-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .error-message {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .loading {
+            color: #007bff;
+            font-style: italic;
+        }
+        .size-info {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+        .current-selection {
+            font-weight: bold;
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Thumbnail Tool</h1>
+    <div class="button-group">
+        <button id="backBtn">← Back to Upload</button>
+    </div>
+    
+    <div id="thumbnailPreview">
+        <div class="loading">Loading image...</div>
+    </div>
+    
+    <div class="size-info">
+        <div>Original Size: <span id="originalSize">Loading...</span></div>
+        <div>Selected Size: <span id="selectedSize" class="current-selection">None selected</span></div>
+    </div>
+    
+    <h3>Choose Thumbnail Size:</h3>
+    <div class="size-options">
+        <button class="size-btn" data-width="150" data-height="150">150×150</button>
+        <button class="size-btn" data-width="200" data-height="200">200×200</button>
+        <button class="size-btn" data-width="300" data-height="300">300×300</button>
+        <button class="size-btn" data-width="128" data-height="128">128×128</button>
+        <button class="size-btn" data-width="256" data-height="256">256×256</button>
+        <button class="size-btn" data-width="512" data-height="512">512×512</button>
+        <button class="size-btn" data-width="100" data-height="100">100×100</button>
+        <button class="size-btn" data-width="64" data-height="64">64×64</button>
+        <button class="size-btn" id="customSizeBtn">Custom Size</button>
+    </div>
+    
+    <div id="customSizeInputs">
+        <label for="customWidth">Width:</label>
+        <input type="number" id="customWidth" placeholder="Width" min="1" max="2000">
+        <label for="customHeight">Height:</label>
+        <input type="number" id="customHeight" placeholder="Height" min="1" max="2000">
+        <button class="size-btn" id="applyCustomSize">Apply Custom</button>
+    </div>
+    
+    <div class="button-group">
+        <button id="generateBtn" disabled>🔧 Generate Thumbnail</button>
+    </div>
+    
+    <div class="button-group">
+        <button id="downloadBtn" disabled>💾 Download Thumbnail</button>
+    </div>
+
+    <script>
+        let selectedWidth = null;
+        let selectedHeight = null;
+        let imageFilename = null;
+        let thumbnailFilename = null;
+        let originalImageUrl = null;
+        let originalImageDimensions = { width: 0, height: 0 };
+
+        // Get image filename from URL parameter
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            imageFilename = urlParams.get('filename');
+            
+            if (imageFilename) {
+                originalImageUrl = '/image/' + imageFilename;
+                displayImage();
+            } else {
+                document.getElementById('thumbnailPreview').innerHTML = 
+                    '<div class="error-message">No image data found. Please go back to upload page and select an image.</div>';
+            }
+        });
+
+        function displayImage() {
+            if (imageFilename) {
+                const img = new Image();
+                img.onload = function() {
+                    originalImageDimensions.width = this.naturalWidth;
+                    originalImageDimensions.height = this.naturalHeight;
+                    document.getElementById('originalSize').textContent = 
+                        this.naturalWidth + '×' + this.naturalHeight + ' pixels';
+                };
+                img.src = originalImageUrl;
+                
+                document.getElementById('thumbnailPreview').innerHTML = 
+                    '<img id="thumbnailImage" src="' + originalImageUrl + '" alt="Image to thumbnail">';
+            }
+        }
+
+        document.getElementById('backBtn').addEventListener('click', function() {
+            window.location.href = '/thumbnailupload.html';
+        });
+
+        // Handle size button clicks
+        document.querySelectorAll('.size-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                if (this.id === 'customSizeBtn') {
+                    document.getElementById('customSizeInputs').style.display = 'block';
+                    return;
+                }
+                
+                if (this.id === 'applyCustomSize') {
+                    const width = parseInt(document.getElementById('customWidth').value);
+                    const height = parseInt(document.getElementById('customHeight').value);
+                    
+                    if (width && height && width > 0 && height > 0) {
+                        selectedWidth = width;
+                        selectedHeight = height;
+                        updateSelectedSize();
+                        document.getElementById('customSizeInputs').style.display = 'none';
+                    } else {
+                        alert('Please enter valid width and height values.');
+                        return;
+                    }
+                } else {
+                    selectedWidth = parseInt(this.dataset.width);
+                    selectedHeight = parseInt(this.dataset.height);
+                    document.getElementById('customSizeInputs').style.display = 'none';
+                }
+                
+                // Update button states
+                document.querySelectorAll('.size-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                if (this.id !== 'applyCustomSize') {
+                    this.classList.add('active');
+                }
+                
+                updateSelectedSize();
+            });
+        });
+
+        function updateSelectedSize() {
+            if (selectedWidth && selectedHeight) {
+                document.getElementById('selectedSize').textContent = selectedWidth + '×' + selectedHeight + ' pixels';
+                document.getElementById('generateBtn').disabled = false;
+            }
+        }
+
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            if (!selectedWidth || !selectedHeight || !imageFilename) {
+                alert('Please select a thumbnail size first.');
+                return;
+            }
+            
+            const thumbnailData = {
+                filename: imageFilename,
+                width: selectedWidth,
+                height: selectedHeight
+            };
+
+            // Show loading state
+            const thumbnailImage = document.getElementById('thumbnailImage');
+            if (thumbnailImage) {
+                thumbnailImage.style.opacity = '0.5';
+            }
+            this.disabled = true;
+            this.textContent = 'Generating...';
+
+            fetch('/generate_thumbnail', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(thumbnailData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    thumbnailFilename = data.thumbnail_filename;
+                    const thumbnailImage = document.getElementById('thumbnailImage');
+                    if (thumbnailImage) {
+                        thumbnailImage.src = data.thumbnail_url;
+                        thumbnailImage.style.opacity = '1';
+                        thumbnailImage.onload = function() {
+                            this.style.opacity = '1';
+                        };
+                    }
+                    document.getElementById('downloadBtn').disabled = false;
+                } else {
+                    alert('Thumbnail generation failed: ' + data.error);
+                    if (thumbnailImage) {
+                        thumbnailImage.style.opacity = '1';
+                    }
+                }
+            })
+            .catch(error => {
+                alert('Thumbnail generation failed: ' + error.message);
+                const thumbnailImage = document.getElementById('thumbnailImage');
+                if (thumbnailImage) {
+                    thumbnailImage.style.opacity = '1';
+                }
+            })
+            .finally(() => {
+                this.disabled = false;
+                this.textContent = '🔧 Generate Thumbnail';
+            });
+        });
+
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            if (thumbnailFilename) {
+                // Download the thumbnail
+                window.open('/download_thumbnail/' + thumbnailFilename, '_blank');
+            } else if (imageFilename) {
+                // If no thumbnail generated, download original
+                window.open('/image/' + imageFilename, '_blank');
+            } else {
+                alert('No thumbnail to download. Please generate a thumbnail first.');
+            }
+        });
+    </script>
+</body>
+</html>

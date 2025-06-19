@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Flip Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #flipPreview {
+            text-align: center;
+            margin: 20px 0;
+        }
+        #flipPreview img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        #backBtn {
+            background-color: #6c757d;
+            color: white;
+        }
+        #backBtn:hover {
+            background-color: #545b62;
+        }
+        #flipHorizontal, #flipVertical {
+            background-color: #007bff;
+            color: white;
+        }
+        #flipHorizontal:hover, #flipVertical:hover {
+            background-color: #0056b3;
+        }
+        #resetFlip {
+            background-color: #ffc107;
+            color: black;
+        }
+        #resetFlip:hover {
+            background-color: #e0a800;
+        }
+        #downloadBtn {
+            background-color: #28a745;
+            color: white;
+        }
+        #downloadBtn:hover {
+            background-color: #1e7e34;
+        }
+        .button-group {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .error-message {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .loading {
+            color: #007bff;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Flip Tool</h1>
+    <div class="button-group">
+        <button id="backBtn">← Back to Upload</button>
+    </div>
+    
+    <div id="flipPreview">
+        <div class="loading">Loading image...</div>
+    </div>
+    
+    <div class="button-group">
+        <button id="flipHorizontal">↔ Flip Horizontal</button>
+        <button id="flipVertical">↕ Flip Vertical</button>
+        <button id="resetFlip">🔄 Reset</button>
+    </div>
+    
+    <div class="button-group">
+        <button id="downloadBtn">💾 Download Result</button>
+    </div>
+
+    <script>
+        let currentTransform = { scaleX: 1, scaleY: 1 };
+        let imageFilename = null;
+        let flippedFilename = null;
+        let originalImageUrl = null;
+
+        // Get image filename from URL parameter
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            imageFilename = urlParams.get('filename');
+            
+            if (imageFilename) {
+                originalImageUrl = '/image/' + imageFilename;
+                displayImage();
+            } else {
+                document.getElementById('flipPreview').innerHTML = 
+                    '<div class="error-message">No image data found. Please go back to upload page and select an image.</div>';
+            }
+        });
+
+        function displayImage() {
+            if (imageFilename) {
+                document.getElementById('flipPreview').innerHTML = 
+                    '<img id="flipImage" src="' + originalImageUrl + '" alt="Image to flip">';
+            }
+        }
+
+        document.getElementById('backBtn').addEventListener('click', function() {
+            window.location.href = '/upload';
+        });
+
+        document.getElementById('flipHorizontal').addEventListener('click', function() {
+            if (imageFilename) {
+                currentTransform.scaleX *= -1;
+                applyFlip();
+            }
+        });
+
+        document.getElementById('flipVertical').addEventListener('click', function() {
+            if (imageFilename) {
+                currentTransform.scaleY *= -1;
+                applyFlip();
+            }
+        });
+
+        document.getElementById('resetFlip').addEventListener('click', function() {
+            if (imageFilename) {
+                currentTransform = { scaleX: 1, scaleY: 1 };
+                // Reset to original image
+                displayImage();
+                flippedFilename = null;
+            }
+        });
+
+        function applyFlip() {
+            const flipData = {
+                filename: imageFilename,
+                flip_horizontal: currentTransform.scaleX < 0,
+                flip_vertical: currentTransform.scaleY < 0
+            };
+
+            // Show loading state
+            const flipImage = document.getElementById('flipImage');
+            if (flipImage) {
+                flipImage.style.opacity = '0.5';
+            }
+
+            fetch('/flip_image', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(flipData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    flippedFilename = data.flipped_filename;
+                    const flipImage = document.getElementById('flipImage');
+                    if (flipImage) {
+                        flipImage.src = data.flipped_url;
+                        flipImage.style.opacity = '1';
+                        // Add a small delay to ensure the image loads
+                        flipImage.onload = function() {
+                            this.style.opacity = '1';
+                        };
+                    }
+                } else {
+                    alert('Flip operation failed: ' + data.error);
+                    // Reset image opacity
+                    if (flipImage) {
+                        flipImage.style.opacity = '1';
+                    }
+                }
+            })
+            .catch(error => {
+                alert('Flip operation failed: ' + error.message);
+                // Reset image opacity
+                const flipImage = document.getElementById('flipImage');
+                if (flipImage) {
+                    flipImage.style.opacity = '1';
+                }
+            });
+        }
+
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            if (flippedFilename) {
+                // Download the flipped image
+                window.open('/download_flipped/' + flippedFilename, '_blank');
+            } else if (imageFilename) {
+                // If no flips applied, download original
+                window.open('/image/' + imageFilename, '_blank');
+            } else {
+                alert('No image to download. Please upload an image first.');
+            }
+        });
+    </script>
+</body>
+</html>

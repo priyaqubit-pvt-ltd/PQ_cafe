@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Crop Tool</title>
+</head>
+<body>
+    <h1>Image Crop Tool</h1>
+    <div>
+        <button id="backBtn">← Back to Upload</button>
+    </div>
+    <br>
+    
+    <div id="cropPreview">
+        <div style="color: #007bff; font-style: italic;">Loading image...</div>
+    </div>
+    
+    <div id="imageInfo" style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-radius: 4px; border: 1px solid #dee2e6;">
+        <div>Original Size: <span id="originalSize">Loading...</span></div>
+        <div>Selected Area: <span id="selectedArea" style="font-weight: bold; color: #28a745;">None selected</span></div>
+    </div>
+    
+    <h3>Crop Controls:</h3>
+    <div style="margin: 10px 0;">
+        <label for="cropX">X Position:</label>
+        <input type="number" id="cropX" min="0" value="0" style="width: 80px; margin: 0 5px;">
+        
+        <label for="cropY">Y Position:</label>
+        <input type="number" id="cropY" min="0" value="0" style="width: 80px; margin: 0 5px;">
+        
+        <label for="cropWidth">Width:</label>
+        <input type="number" id="cropWidth" min="1" value="100" style="width: 80px; margin: 0 5px;">
+        
+        <label for="cropHeight">Height:</label>
+        <input type="number" id="cropHeight" min="1" value="100" style="width: 80px; margin: 0 5px;">
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <button id="updatePreviewBtn">Update Preview</button>
+        <button id="cropBtn" disabled>🔧 Crop Image</button>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <button id="downloadBtn" disabled>💾 Download Cropped Image</button>
+    </div>
+
+    <div id="cropResult" style="margin: 20px 0; text-align: center;"></div>
+
+    <script>
+        let imageFilename = null;
+        let croppedFilename = null;
+        let originalImageUrl = null;
+        let originalImageDimensions = { width: 0, height: 0 };
+        let imageDisplayScale = 1;
+        let isSelecting = false;
+        let isResizing = false;
+        let isDragging = false;
+        let startX, startY;
+        let resizeHandle = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let selectionBox = null;
+        let imageContainer = null;
+        let initialSelectionState = null;
+
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            imageFilename = urlParams.get('filename');
+            
+            if (imageFilename) {
+                originalImageUrl = '/image/' + imageFilename;
+                displayImage();
+            } else {
+                document.getElementById('cropPreview').innerHTML = 
+                    '<div style="color: #dc3545; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; padding: 10px;">No image data found. Please go back to upload page and select an image.</div>';
+            }
+        });
+
+        function displayImage() {
+            if (imageFilename) {
+                const img = new Image();
+                img.onload = function() {
+                    originalImageDimensions.width = this.naturalWidth;
+                    originalImageDimensions.height = this.naturalHeight;
+                    document.getElementById('originalSize').textContent = 
+                        this.naturalWidth + '×' + this.naturalHeight + ' pixels';
+                    
+                    // Set max values for crop inputs
+                    document.getElementById('cropX').max = this.naturalWidth - 1;
+                    document.getElementById('cropY').max = this.naturalHeight - 1;
+                    document.getElementById('cropWidth').max = this.naturalWidth;
+                    document.getElementById('cropHeight').max = this.naturalHeight;
+                    
+                    // Set default crop dimensions to a reasonable size
+                    const defaultWidth = Math.min(200, this.naturalWidth);
+                    const defaultHeight = Math.min(200, this.naturalHeight);
+                    document.getElementById('cropWidth').value = defaultWidth;
+                    document.getElementById('cropHeight').value = defaultHeight;
+                    
+                    // Create image container with selection overlay
+                    createImageContainer();
+                    updateSelectedArea();
+                    updateSelectionOverlay();
+                };
+                img.src = originalImageUrl;
+            }
+        }
+
+        function createImageContainer() {
+            // Create container with relative positioning
+            imageContainer = document.createElement('div');
+            imageContainer.style.position = 'relative';
+            imageContainer.style.display = 'inline-block';
+            imageContainer.style.border = '1px solid #ddd';
+            imageContainer.style.borderRadius = '4px';
+            imageContainer.style.overflow = 'hidden';
+
+            // Create the image element
+            const img = document.createElement('img');
+            img.id = 'cropImage';
+            img.src = originalImageUrl;
+            img.alt = 'Image to crop';
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.style.display = 'block';
+            img.style.userSelect = 'none';
+            img.draggable = false;
+
+            // Create selection overlay
+            selectionBox = document.createElement('div');
+            selectionBox.style.position = 'absolute';
+            selectionBox.style.border = '2px dashed #007bff';
+            selectionBox.style.backgroundColor = 'rgba(0, 123, 255, 0.1)';
+            selectionBox.style.cursor = 'move';
+            selectionBox.style.display = 'none';
+
+            // Add resize handles
+            const handles = ['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'];
+            handles.forEach(handle => {
+                const handleDiv = document.createElement('div');
+                handleDiv.className = 'resize-handle handle-' + handle;
+                handleDiv.dataset.handle = handle;
+                handleDiv.style.position = 'absolute';
+                handleDiv.style.backgroundColor = '#007bff';
+                handleDiv.style.border = '1px solid #fff';
+                handleDiv.style.borderRadius = '50%';
+                handleDiv.style.zIndex = '10';
+                
+                // Handle positioning and sizing
+                if (handle.includes('n')) handleDiv.style.top = '-4px';
+                if (handle.includes('s')) handleDiv.style.bottom = '-4px';
+                if (handle.includes('w')) handleDiv.style.left = '-4px';
+                if (handle.includes('e')) handleDiv.style.right = '-4px';
+                
+                if (handle === 'n' || handle === 's') {
+                    handleDiv.style.left = '50%';
+                    handleDiv.style.transform = 'translateX(-50%)';
+                    handleDiv.style.width = '8px';
+                    handleDiv.style.height = '8px';
+                    handleDiv.style.cursor = handle === 'n' ? 'n-resize' : 's-resize';
+                } else if (handle === 'w' || handle === 'e') {
+                    handleDiv.style.top = '50%';
+                    handleDiv.style.transform = 'translateY(-50%)';
+                    handleDiv.style.width = '8px';
+                    handleDiv.style.height = '8px';
+                    handleDiv.style.cursor = handle === 'w' ? 'w-resize' : 'e-resize';
+                } else {
+                    handleDiv.style.width = '8px';
+                    handleDiv.style.height = '8px';
+                    handleDiv.style.cursor = handle + '-resize';
+                }
+
+                // Add event listeners for resize handles
+                handleDiv.addEventListener('mousedown', startResize);
+                selectionBox.appendChild(handleDiv);
+            });
+
+            imageContainer.appendChild(img);
+            imageContainer.appendChild(selectionBox);
+
+            // Add event listeners
+            imageContainer.addEventListener('mousedown', handleMouseDown);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            
+            // Add drag functionality to selection box
+            selectionBox.addEventListener('mousedown', startDrag);
+
+            // Replace the crop preview content
+            document.getElementById('cropPreview').innerHTML = '';
+            document.getElementById('cropPreview').appendChild(imageContainer);
+
+            // Calculate display scale when image loads
+            img.onload = function() {
+                imageDisplayScale = this.offsetWidth / originalImageDimensions.width;
+            };
+        }
+
+        function handleMouseDown(e) {
+            // Don't start selection if clicking on selection box or its handles
+            if (e.target === selectionBox || e.target.classList.contains('resize-handle')) {
+                return;
+            }
+            
+            const img = imageContainer.querySelector('#cropImage');
+            const imgRect = img.getBoundingClientRect();
+            
+            startX = e.clientX - imgRect.left;
+            startY = e.clientY - imgRect.top;
+            
+            // Ensure coordinates are within image bounds
+            startX = Math.max(0, Math.min(startX, img.offsetWidth));
+            startY = Math.max(0, Math.min(startY, img.offsetHeight));
+            
+            isSelecting = true;
+            
+            selectionBox.style.left = startX + 'px';
+            selectionBox.style.top = startY + 'px';
+            selectionBox.style.width = '0px';
+            selectionBox.style.height = '0px';
+            selectionBox.style.display = 'block';
+            
+            e.preventDefault();
+        }
+
+        function handleMouseMove(e) {
+            if (isSelecting) {
+                updateSelection(e);
+            } else if (isResizing) {
+                handleResize(e);
+            } else if (isDragging) {
+                handleDrag(e);
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (isSelecting) {
+                endSelection();
+            } else if (isResizing) {
+                endResize();
+            } else if (isDragging) {
+                endDrag();
+            }
+        }
+
+        function updateSelection(e) {
+            const img = imageContainer.querySelector('#cropImage');
+            const imgRect = img.getBoundingClientRect();
+            
+            let currentX = e.clientX - imgRect.left;
+            let currentY = e.clientY - imgRect.top;
+            
+            // Ensure coordinates are within image bounds
+            currentX = Math.max(0, Math.min(currentX, img.offsetWidth));
+            currentY = Math.max(0, Math.min(currentY, img.offsetHeight));
+            
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+            
+            selectionBox.style.left = left + 'px';
+            selectionBox.style.top = top + 'px';
+            selectionBox.style.width = width + 'px';
+            selectionBox.style.height = height + 'px';
+            
+            updateInputsFromSelection();
+        }
+
+        function endSelection() {
+            isSelecting = false;
+            
+            // Hide selection if it's too small
+            const width = parseInt(selectionBox.style.width);
+            const height = parseInt(selectionBox.style.height);
+            
+            if (width < 10 || height < 10) {
+                selectionBox.style.display = 'none';
+            }
+        }
+
+        function startResize(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            isResizing = true;
+            resizeHandle = e.target.dataset.handle;
+            
+            const img = imageContainer.querySelector('#cropImage');
+            const imgRect = img.getBoundingClientRect();
+            
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Store initial selection state
+            initialSelectionState = {
+                left: parseInt(selectionBox.style.left),
+                top: parseInt(selectionBox.style.top),
+                width: parseInt(selectionBox.style.width),
+                height: parseInt(selectionBox.style.height)
+            };
+        }
+
+        function handleResize(e) {
+            if (!initialSelectionState) return;
+            
+            const img = imageContainer.querySelector('#cropImage');
+            
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            
+            let newLeft = initialSelectionState.left;
+            let newTop = initialSelectionState.top;
+            let newWidth = initialSelectionState.width;
+            let newHeight = initialSelectionState.height;
+            
+            // Handle different resize directions
+            switch (resizeHandle) {
+                case 'nw':
+                    newLeft = Math.max(0, initialSelectionState.left + deltaX);
+                    newTop = Math.max(0, initialSelectionState.top + deltaY);
+                    newWidth = Math.max(10, initialSelectionState.width - deltaX);
+                    newHeight = Math.max(10, initialSelectionState.height - deltaY);
+                    break;
+                case 'ne':
+                    newTop = Math.max(0, initialSelectionState.top + deltaY);
+                    newWidth = Math.max(10, initialSelectionState.width + deltaX);
+                    newHeight = Math.max(10, initialSelectionState.height - deltaY);
+                    break;
+                case 'sw':
+                    newLeft = Math.max(0, initialSelectionState.left + deltaX);
+                    newWidth = Math.max(10, initialSelectionState.width - deltaX);
+                    newHeight = Math.max(10, initialSelectionState.height + deltaY);
+                    break;
+                case 'se':
+                    newWidth = Math.max(10, initialSelectionState.width + deltaX);
+                    newHeight = Math.max(10, initialSelectionState.height + deltaY);
+                    break;
+                case 'n':
+                    newTop = Math.max(0, initialSelectionState.top + deltaY);
+                    newHeight = Math.max(10, initialSelectionState.height - deltaY);
+                    break;
+                case 's':
+                    newHeight = Math.max(10, initialSelectionState.height + deltaY);
+                    break;
+                case 'w':
+                    newLeft = Math.max(0, initialSelectionState.left + deltaX);
+                    newWidth = Math.max(10, initialSelectionState.width - deltaX);
+                    break;
+                case 'e':
+                    newWidth = Math.max(10, initialSelectionState.width + deltaX);
+                    break;
+            }
+            
+            // Ensure the selection doesn't go outside image bounds
+            if (newLeft < 0) {
+                newWidth += newLeft;
+                newLeft = 0;
+            }
+            if (newTop < 0) {
+                newHeight += newTop;
+                newTop = 0;
+            }
+            if (newLeft + newWidth > img.offsetWidth) {
+                newWidth = img.offsetWidth - newLeft;
+            }
+            if (newTop + newHeight > img.offsetHeight) {
+                newHeight = img.offsetHeight - newTop;
+            }
+            
+            // Apply the new dimensions
+            selectionBox.style.left = newLeft + 'px';
+            selectionBox.style.top = newTop + 'px';
+            selectionBox.style.width = newWidth + 'px';
+            selectionBox.style.height = newHeight + 'px';
+            
+            updateInputsFromSelection();
+        }
+
+        function endResize() {
+            isResizing = false;
+            resizeHandle = null;
+            initialSelectionState = null;
+        }
+
+        function startDrag(e) {
+            if (e.target.classList.contains('resize-handle')) return;
+            
+            e.stopPropagation();
+            e.preventDefault();
+            
+            isDragging = true;
+            
+            const selectionRect = selectionBox.getBoundingClientRect();
+            const containerRect = imageContainer.getBoundingClientRect();
+            
+            dragOffsetX = e.clientX - selectionRect.left;
+            dragOffsetY = e.clientY - selectionRect.top;
+            
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Store initial position
+            initialSelectionState = {
+                left: parseInt(selectionBox.style.left),
+                top: parseInt(selectionBox.style.top)
+            };
+        }
+
+        function handleDrag(e) {
+            if (!initialSelectionState) return;
+            
+            const img = imageContainer.querySelector('#cropImage');
+            const imgRect = img.getBoundingClientRect();
+            
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            
+            const currentWidth = parseInt(selectionBox.style.width);
+            const currentHeight = parseInt(selectionBox.style.height);
+            
+            let newLeft = initialSelectionState.left + deltaX;
+            let newTop = initialSelectionState.top + deltaY;
+            
+            // Ensure the selection stays within image bounds
+            newLeft = Math.max(0, Math.min(newLeft, img.offsetWidth - currentWidth));
+            newTop = Math.max(0, Math.min(newTop, img.offsetHeight - currentHeight));
+            
+            selectionBox.style.left = newLeft + 'px';
+            selectionBox.style.top = newTop + 'px';
+            
+            updateInputsFromSelection();
+        }
+
+        function endDrag() {
+            isDragging = false;
+            initialSelectionState = null;
+        }
+
+        function updateInputsFromSelection() {
+            const left = parseInt(selectionBox.style.left);
+            const top = parseInt(selectionBox.style.top);
+            const width = parseInt(selectionBox.style.width);
+            const height = parseInt(selectionBox.style.height);
+            
+            // Convert to actual image coordinates
+            const actualX = Math.round(left / imageDisplayScale);
+            const actualY = Math.round(top / imageDisplayScale);
+            const actualWidth = Math.round(width / imageDisplayScale);
+            const actualHeight = Math.round(height / imageDisplayScale);
+            
+            document.getElementById('cropX').value = actualX;
+            document.getElementById('cropY').value = actualY;
+            document.getElementById('cropWidth').value = actualWidth;
+            document.getElementById('cropHeight').value = actualHeight;
+            
+            updateSelectedArea();
+        }
+
+        function updateSelectionOverlay() {
+            if (!selectionBox || !imageContainer) return;
+            
+            const x = parseInt(document.getElementById('cropX').value) || 0;
+            const y = parseInt(document.getElementById('cropY').value) || 0;
+            const width = parseInt(document.getElementById('cropWidth').value) || 0;
+            const height = parseInt(document.getElementById('cropHeight').value) || 0;
+            
+            if (width > 0 && height > 0) {
+                const displayX = x * imageDisplayScale;
+                const displayY = y * imageDisplayScale;
+                const displayWidth = width * imageDisplayScale;
+                const displayHeight = height * imageDisplayScale;
+                
+                selectionBox.style.left = displayX + 'px';
+                selectionBox.style.top = displayY + 'px';
+                selectionBox.style.width = displayWidth + 'px';
+                selectionBox.style.height = displayHeight + 'px';
+                selectionBox.style.display = 'block';
+            } else {
+                selectionBox.style.display = 'none';
+            }
+        }
+
+        function updateSelectedArea() {
+            const x = parseInt(document.getElementById('cropX').value) || 0;
+            const y = parseInt(document.getElementById('cropY').value) || 0;
+            const width = parseInt(document.getElementById('cropWidth').value) || 0;
+            const height = parseInt(document.getElementById('cropHeight').value) || 0;
+            
+            if (width > 0 && height > 0) {
+                document.getElementById('selectedArea').textContent = 
+                    `${width}×${height} pixels at (${x}, ${y})`;
+                document.getElementById('cropBtn').disabled = false;
+            } else {
+                document.getElementById('selectedArea').textContent = 'Invalid dimensions';
+                document.getElementById('cropBtn').disabled = true;
+            }
+        }
+
+        document.getElementById('backBtn').addEventListener('click', function() {
+            window.location.href = '/cropupload';
+        });
+
+        // Add event listeners to crop inputs
+        ['cropX', 'cropY', 'cropWidth', 'cropHeight'].forEach(id => {
+            document.getElementById(id).addEventListener('input', function() {
+                updateSelectedArea();
+                updateSelectionOverlay();
+            });
+        });
+
+        document.getElementById('updatePreviewBtn').addEventListener('click', function() {
+            updateSelectedArea();
+            updateSelectionOverlay();
+        });
+
+        document.getElementById('cropBtn').addEventListener('click', function() {
+            const x = parseInt(document.getElementById('cropX').value) || 0;
+            const y = parseInt(document.getElementById('cropY').value) || 0;
+            const width = parseInt(document.getElementById('cropWidth').value) || 0;
+            const height = parseInt(document.getElementById('cropHeight').value) || 0;
+            
+            if (!imageFilename || width <= 0 || height <= 0) {
+                alert('Please enter valid crop dimensions.');
+                return;
+            }
+            
+            // Validate crop area is within image bounds
+            if (x < 0 || y < 0 || x + width > originalImageDimensions.width || y + height > originalImageDimensions.height) {
+                alert('Crop area is outside image boundaries. Please adjust the coordinates.');
+                return;
+            }
+            
+            const cropData = {
+                filename: imageFilename,
+                x: x,
+                y: y,
+                width: width,
+                height: height
+            };
+
+            // Show loading state
+            const cropImage = document.getElementById('cropImage');
+            if (cropImage) {
+                cropImage.style.opacity = '0.5';
+            }
+            this.disabled = true;
+            this.textContent = 'Cropping...';
+
+            fetch('/process_crop', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(cropData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    croppedFilename = data.cropped_filename;
+                    
+                    // Show cropped result
+                    document.getElementById('cropResult').innerHTML = 
+                        '<h4>Cropped Result:</h4><img src="' + data.cropped_url + '" alt="Cropped image" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px;">';
+                    
+                    document.getElementById('downloadBtn').disabled = false;
+                    
+                    if (cropImage) {
+                        cropImage.style.opacity = '1';
+                    }
+                } else {
+                    alert('Crop failed: ' + data.error);
+                    if (cropImage) {
+                        cropImage.style.opacity = '1';
+                    }
+                }
+            })
+            .catch(error => {
+                alert('Crop failed: ' + error.message);
+                const cropImage = document.getElementById('cropImage');
+                if (cropImage) {
+                    cropImage.style.opacity = '1';
+                }
+            })
+            .finally(() => {
+                this.disabled = false;
+                this.textContent = '🔧 Crop Image';
+            });
+        });
+
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            if (croppedFilename) {
+                window.open('/download_cropped/' + croppedFilename, '_blank');
+            } else {
+                alert('No cropped image to download. Please crop the image first.');
+            }
+        });
+    </script>
+</body>
+</html>

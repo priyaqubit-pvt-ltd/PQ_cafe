@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #uploadPreview img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #uploadBtn {
+            background-color: #007bff;
+            color: white;
+        }
+        #uploadBtn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #uploadBtn:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        #loadingMessage {
+            display: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Upload</h1>
+    <input type="file" id="fileInput" accept="image/*">
+    <br><br>
+    <div id="uploadPreview"></div>
+    <br>
+    <div id="loadingMessage">Uploading image...</div>
+    <button id="uploadBtn" disabled>Upload & Go to Thumbnail Tool</button>
+
+    <script>
+        let selectedFile = null;
+
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadPreview = document.getElementById('uploadPreview');
+        const loadingMessage = document.getElementById('loadingMessage');
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                selectedFile = file;
+                uploadBtn.disabled = false;
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    uploadPreview.innerHTML = '<img src="' + e.target.result + '" width="300" alt="Preview">';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                selectedFile = null;
+                uploadBtn.disabled = true;
+                uploadPreview.innerHTML = '';
+            }
+        });
+
+        uploadBtn.addEventListener('click', function() {
+            if (selectedFile) {
+                // Show loading message
+                loadingMessage.style.display = 'block';
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = 'Uploading...';
+                
+                // Create FormData to upload file
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                // Upload to server
+                fetch('/upload_image', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Redirect to thumbnail page with filename parameter
+                        window.location.href = '/thumbnail?filename=' + encodeURIComponent(data.filename);
+                    } else {
+                        alert('Upload failed: ' + data.error);
+                        // Reset button state
+                        loadingMessage.style.display = 'none';
+                        uploadBtn.disabled = false;
+                        uploadBtn.textContent = 'Upload & Go to Thumbnail Tool';
+                    }
+                })
+                .catch(error => {
+                    alert('Upload failed: ' + error.message);
+                    // Reset button state
+                    loadingMessage.style.display = 'none';
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = 'Upload & Go to Thumbnail Tool';
+                });
+            }
+        });
+    </script>
+</body>
+</html>
